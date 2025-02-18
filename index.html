@@ -1,0 +1,22 @@
+<body>
+  <div id="login">
+    <input id="username" placeholder="Enter your username" />
+    <button id="join">Join Chat</button>
+  </div>
+  <div id="chat" style="display: none">
+    <ul id="messages"></ul>
+    <form id="form" action="">
+      <input id="input" autocomplete="off" /><button>Send</button>
+    </form>
+  </div>
+  <script src="https://cdn.socket.io/4.6.1/socket.io.min.js"></script>
+
+  <script>
+    let username = "";
+    const joinButton = document.getElementById("join");
+
+    joinButton.addEventListener("click", () => {
+      const socket = io("http://localhost:3000");
+    });
+  </script>
+</body>
