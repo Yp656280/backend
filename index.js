@@ -30,7 +30,9 @@ connectDb();
 //api
 app.use("/api/user", require("./routes/user"));
 app.use("/api/room", require("./routes/room"));
-
+app.get("/", (req, res) => {
+  res.send("Hello");
+});
 // Store active users
 io.on("connection", (socket, user) => {
   console.log("User connected:", socket.id);
