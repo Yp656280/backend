@@ -108,6 +108,47 @@ io.on("connection", (socket, user) => {
     }
   });
 
+  // Handle deleting messages
+  socket.on("deleteMessages", async ({ room, messages }) => {
+    try {
+      // Find the room in the database
+      const roomData = await Room.findById(room);
+      if (!roomData) throw new Error("Room not found");
+
+      // Filter out the messages to be deleted
+      const updatedMessages = roomData.messages.filter(
+        (message) => !messages.includes(message._id.toString())
+      );
+
+      // Update the room with the filtered messages
+      roomData.messages = updatedMessages;
+      await roomData.save();
+
+      // Prepare the remaining messages to send via Socket.IO
+      const remainingMessages = updatedMessages.map((cur) => ({
+        sender: { _id: cur.sender },
+        time: cur.timestamp,
+        content: cur.content,
+        _id: cur._id,
+      }));
+
+      // Emit the updated message list to the room
+      io.to(room).emit("previousMessages", remainingMessages);
+
+      // Emit a success response to the client
+      socket.emit("messageDeleted", {
+        success: true,
+        message: "Messages deleted successfully",
+      });
+    } catch (error) {
+      console.error("Error deleting messages:", error);
+      socket.emit("messageDeleted", {
+        success: false,
+        error: error.message,
+      });
+    }
+  });
+
   // Handle user disconnect
   socket.on("disconnect", () => {
     console.log("User disconnected:", socket.id);
