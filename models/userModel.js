@@ -15,6 +15,10 @@ const userSchema = mongoose.Schema(
       type: String,
       required: [true, "please add the email"],
     },
+    logo: {
+      type: String,
+      required: [true, "please add the logo"],
+    },
   },
   {
     timestamps: true,

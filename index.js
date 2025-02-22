@@ -33,37 +33,126 @@ app.use("/api/room", require("./routes/room"));
 app.get("/", (req, res) => {
   res.send("Hello");
 });
-// Store active users
-io.on("connection", (socket, user) => {
+// io.on("connection", (socket, user) => {
+//   console.log("User connected:", socket.id);
+
+//   socket.on("leaveRoom", ({ room, user }) => {
+//     socket.leave(room);
+//     console.log(`${user?.username} left room: ${room}`);
+//   });
+
+//   socket.on("joinRoom", async ({ room, user }) => {
+//     try {
+//       socket.join(room);
+//       console.log(`${user?.username} joined room: ${room}`);
+
+//       socket.to(room).emit("userJoined", { user, room });
+
+//       const roomData = await Room.findById(room).populate({
+//         path: "messages.sender",
+//         select: "username",
+//       });
+
+//       if (roomData && roomData.messages.length > 0) {
+//         socket.emit("previousMessages", roomData.messages);
+//       } else {
+//         console.log("No previous messages found.");
+//       }
+//     } catch (error) {
+//       console.error("Error joining room:", error);
+//     }
+//   });
+
+//   socket.on("sendMessage", async ({ room, sender, message }) => {
+//     try {
+//       const roomData = await Room.findById(room);
+
+//       if (!roomData) throw new Error("Room not found");
+
+//       const timestamp = new Date().toISOString();
+
+//       const newMessage = {
+//         sender,
+
+//         content: message,
+
+//         time: timestamp,
+//       };
+
+//       roomData.messages.push(newMessage);
+
+//       await roomData.save();
+
+//       io.to(room).emit("receiveMessage", newMessage);
+//     } catch (error) {
+//       console.error("Error sending message:", error);
+//     }
+//   });
+
+//   socket.on("deleteMessages", async ({ room, messages }) => {
+//     try {
+//       const roomData = await Room.findById(room);
+//       if (!roomData) throw new Error("Room not found");
+
+//       const updatedMessages = roomData.messages.filter(
+//         (message) => !messages.includes(message._id.toString())
+//       );
+
+//       roomData.messages = updatedMessages;
+//       await roomData.save();
+
+//       socket.emit("previousMessages", updatedMessages);
+
+//       socket.emit("messageDeleted", {
+//         success: true,
+//         message: "Messages deleted successfully",
+//       });
+//     } catch (error) {
+//       console.error("Error deleting messages:", error);
+//       socket.emit("messageDeleted", {
+//         success: false,
+//         error: error.message,
+//       });
+//     }
+//   });
+
+//   socket.on("disconnect", () => {
+//     console.log("User disconnected:", socket.id);
+//   });
+// });
+
+io.on("connection", (socket) => {
   console.log("User connected:", socket.id);
 
-  //Lisetn for leaveroom event
   socket.on("leaveRoom", ({ room, user }) => {
     socket.leave(room);
-    console.log(`${user?.username} left room: ${room}`);
+    // console.log(`${user?.username} left room: ${room}`);
   });
 
-  // Listen for joinRoom event
   socket.on("joinRoom", async ({ room, user }) => {
     try {
-      socket.join(room); // Join the specified room
-      console.log(`${user?.username} joined room: ${room}`);
+      socket.join(room);
+      // console.log(`${user?.username} joined room: ${room}`);
 
-      // Notify others in the room about the new user
       socket.to(room).emit("userJoined", { user, room });
 
-      // Load and send previous messages (if they exist)
-      // Load and send previous messages
-
       const roomData = await Room.findById(room).populate({
-        path: "messages.sender", // Populate the sender field with the User model
-        select: "username", // Only select the 'username' field
+        path: "messages.sender",
+        select: "_id username",
       });
 
       if (roomData && roomData.messages.length > 0) {
-        // Emit the previous messages to the user who just joined
+        const formattedMessages = roomData.messages.map((msg) => ({
+          sender: {
+            _id: msg.sender._id,
+            username: msg.sender.username,
+          },
+          content: msg.content,
+          _id: msg._id,
+          timestamp: msg.timestamp,
+        }));
 
-        socket.emit("previousMessages", roomData.messages);
+        socket.emit("previousMessages", formattedMessages);
       } else {
         console.log("No previous messages found.");
       }
@@ -72,90 +161,81 @@ io.on("connection", (socket, user) => {
     }
   });
 
-  // Handle sending messages
   socket.on("sendMessage", async ({ room, sender, message }) => {
     try {
-      // Find the room by ID
-
       const roomData = await Room.findById(room);
-
       if (!roomData) throw new Error("Room not found");
 
-      // Get the current timestamp
-
-      const timestamp = new Date().toISOString(); // ISO format, but you can adjust it based on your preference
-
-      // Create a new message object with timestamp
-
+      const timestamp = new Date().toISOString();
       const newMessage = {
-        sender, // User ID of the sender
-
-        content: message, // Message content
-
-        time: timestamp, // Add time to the message
+        sender,
+        content: message,
+        timestamp,
       };
 
-      // Push the new message to the room's messages array
-
       roomData.messages.push(newMessage);
+      await roomData.save();
 
-      await roomData.save(); // Save changes to the database
+      const populatedMessage = await Room.findOne({ _id: room })
+        .select("messages")
+        .populate({
+          path: "messages.sender",
+          select: "_id username",
+        });
 
-      // Broadcast the new message to the room, including the timestamp
-      io.to(room).emit("receiveMessage", newMessage);
+      const latestMessage = populatedMessage.messages.pop();
+      const formattedMessage = {
+        sender: {
+          _id: latestMessage.sender._id,
+          username: latestMessage.sender.username,
+        },
+        content: latestMessage.content,
+        _id: latestMessage._id,
+        timestamp: latestMessage.timestamp.toISOString(),
+      };
+      io.to(room).emit("receiveMessage", { message: formattedMessage });
     } catch (error) {
       console.error("Error sending message:", error);
     }
   });
 
-  // Handle deleting messages
   socket.on("deleteMessages", async ({ room, messages }) => {
     try {
-      // Find the room in the database
       const roomData = await Room.findById(room);
       if (!roomData) throw new Error("Room not found");
 
-      // Filter out the messages to be deleted
-      const updatedMessages = roomData.messages.filter(
+      roomData.messages = roomData.messages.filter(
         (message) => !messages.includes(message._id.toString())
       );
 
-      // Update the room with the filtered messages
-      roomData.messages = updatedMessages;
       await roomData.save();
 
-      // Prepare the remaining messages to send via Socket.IO
-      const remainingMessages = updatedMessages.map((cur) => ({
-        sender: { _id: cur.sender },
-        time: cur.timestamp,
-        content: cur.content,
-        _id: cur._id,
+      const formattedMessages = roomData.messages.map((msg) => ({
+        sender: {
+          _id: msg.sender._id,
+          username: msg.sender.username,
+        },
+        content: msg.content,
+        _id: msg._id,
+        timestamp: msg.timestamp,
       }));
 
-      // Emit the updated message list to the room
-      io.to(room).emit("previousMessages", remainingMessages);
-
-      // Emit a success response to the client
+      io.to(room).emit("previousMessages", formattedMessages);
       socket.emit("messageDeleted", {
         success: true,
         message: "Messages deleted successfully",
       });
     } catch (error) {
       console.error("Error deleting messages:", error);
-      socket.emit("messageDeleted", {
-        success: false,
-        error: error.message,
-      });
+      socket.emit("messageDeleted", { success: false, error: error.message });
     }
   });
 
-  // Handle user disconnect
   socket.on("disconnect", () => {
     console.log("User disconnected:", socket.id);
   });
 });
 
-// Start the server
 server.listen(PORT, () => {
   console.log(`Server running on http://localhost:${PORT}`);
 });
